@@ -1,0 +1,157 @@
+# Agora Agent Service
+
+Agora Conversational AI Agent service built with FastAPI.
+
+## Quick Start
+
+Use the repo-root [README.md](../README.md) for the normal full-stack local flow. This document is for working on the Python backend module directly.
+
+Recommended from the repo root.
+
+Repo setup:
+
+```bash
+bun run setup
+```
+
+Agora credentials:
+
+```bash
+agora project env write server/.env.local
+```
+
+Run the app:
+
+```bash
+bun run dev
+```
+
+This assumes the Agora CLI is installed and logged in. The command uses the project selected in your Agora CLI context, which is usually your default account project.
+
+If you are not using the Agora CLI, create the env file manually and fill in your project values:
+
+```bash
+cp server/.env.example server/.env.local
+```
+
+From `server/`:
+
+### 1. Configure Environment
+
+Backend-only Agora CLI env write:
+
+```bash
+agora project env write .env.local
+```
+
+Manual fallback:
+
+```bash
+cp .env.example .env.local
+```
+
+`.env.example` is the reference template. If you are not using the Agora CLI, edit `.env.local` and fill in your Agora credentials:
+- `AGORA_APP_ID` - Your Agora App ID (Required)
+- `AGORA_APP_CERTIFICATE` - Your Agora App Certificate (Required)
+- Agora managed provider access should be enabled for this project
+
+If you still need to authenticate with the CLI:
+
+```bash
+agora login
+```
+
+To select a specific existing project before writing env values:
+
+```bash
+agora project use <project-id-or-name>
+agora project env write .env.local
+```
+
+To create a new project instead of using your default project:
+
+```bash
+agora project create my-first-voice-agent --feature rtc --feature convoai
+agora project use my-first-voice-agent
+agora project env write .env.local
+```
+
+**Note**: This demo needs `AGORA_APP_ID`, `AGORA_APP_CERTIFICATE`, and `GOOGLE_API_KEY` in `.env.local`. `GeminiLive` is an end-to-end voice MLLM. The browser chooses Gemini 3.8 Live or Gemini 3.8 Live Extended Thinking, and only Extended Thinking accepts a low/medium/high thinking level. The browser sends the final `models/gemini-3.8-...` IDs; `src/agent.py` sends them directly to the preview gateway. The FastAPI sample uses `AsyncAgora`; its Gemini session routes to the preview gateway with the `gemini-live` feature header.
+
+### 2. Install Dependencies
+
+**Option A: Using Virtual Environment (Recommended)**
+```bash
+python3 -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+python3 -m pip install -r requirements.txt
+```
+
+From the repository root, `bun run setup:backend` also selects an installed
+Python 3.10+ interpreter and always installs with `server/venv/bin/python3`.
+Set `PYTHON_BIN` if you need to choose one explicitly.
+
+**Option B: Using uv from the repository root**
+```bash
+cd ..
+uv sync
+uv run python server/src/server.py
+```
+
+The root `pyproject.toml` pins `agora-agents` to the released SDK version.
+
+### 3. Start Service
+
+```bash
+# If using virtual environment, make sure it's activated first
+python src/server.py
+```
+
+The service will start on port 8000 (or the port specified in `.env.local`).
+
+## How This Fits The Repo
+
+- Full-stack local development: run `bun run dev` from the repo root. The browser still calls Next `/api/*`, and Next rewrites those requests to this FastAPI service.
+- Module-local backend work: use the commands in this README when you only need to run or inspect the Python service itself.
+- Deployment: this Python service is required because the web app only forwards API requests through `AGENT_BACKEND_URL`.
+
+### 4. Test API
+
+```bash
+# Test config generation
+curl http://localhost:8000/get_config
+
+# Test agent start
+curl -X POST http://localhost:8000/startAgent \
+  -H "Content-Type: application/json" \
+  -d '{"channelName": "test_channel", "rtcUid": 123456, "userUid": 789012}'
+
+# Test agent stop (use agent_id from start response)
+curl -X POST http://localhost:8000/stopAgent \
+  -H "Content-Type: application/json" \
+  -d '{"agentId": "your_agent_id"}'
+```
+
+## API Endpoints
+
+- `GET /get_config` - Generate connection configuration
+- `POST /startAgent` - Start an agent
+- `POST /stopAgent` - Stop an agent
+
+`/get_config` now issues one-hour RTC plus RTM tokens. The web client renews both before expiry, matching the reference Next.js session model.
+
+The repo-level `bun run verify:local:fastapi` check exercises this FastAPI app through the Next proxy path, but it swaps in a fake agent implementation so route wiring can be verified without depending on a live agent start.
+
+## Requirements
+
+- Python >= 3.10
+- Dependencies listed in `requirements.txt`
+
+## SDK
+
+This project uses `agora-agents` (import `agora_agent`):
+- Package: `agora_agent`
+- Agent builder: `agora_agent.agentkit.Agent` with fluent `.with_llm()` / `.with_tts()` / `.with_stt()` API
+- Preview vendor: `GeminiLive` from `agora_agent.agentkit.preview`
+- The Gemini session uses the preview gateway and pins the `agora-feature: gemini-live` header
+- Token: `agora_agent.agentkit.token.generate_convo_ai_token`
